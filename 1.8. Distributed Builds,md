@@ -1,0 +1,279 @@
+Here are **detailed notes on Jenkins Distributed Builds (Master-Agent Setup)** — including configuration methods, agent types, and usage scenarios, followed by **interview questions + scenario-based Q\&A**:
+
+---
+
+## ✅ 18. Distributed Builds (Master-Agent Setup)
+
+Jenkins supports **distributed builds** to scale and isolate job execution using a **Master-Agent architecture**.
+
+---
+
+### 🔧 1. Jenkins Architecture Overview
+
+* **Controller (formerly called Master)**:
+
+  * Manages build schedules.
+  * Stores configuration, job definitions, and build history.
+  * Delegates build execution to agents.
+
+* **Agent (formerly called Slave)**:
+
+  * A machine that runs build jobs on behalf of the controller.
+  * Useful for:
+
+    * Offloading load from the controller.
+    * Running jobs with different OS or toolsets.
+    * Isolating specific workloads.
+
+---
+
+### 🧩 2. Types of Jenkins Agents
+
+| Agent Type       | Description                                                |
+| ---------------- | ---------------------------------------------------------- |
+| **SSH Agent**    | Connects via SSH. Requires credentials and a Java runtime. |
+| **JNLP Agent**   | Connects using a Java Web Start client (JNLP protocol).    |
+| **Docker Agent** | Spins up ephemeral containers as agents for each job.      |
+| **Cloud Agents** | Dynamically provision agents from cloud platforms.         |
+
+---
+
+### ⚙️ 3. Adding Agent Nodes (SSH, JNLP)
+
+#### 🔹 A. SSH Agent Setup
+
+1. Install SSH server on target machine.
+2. On Jenkins:
+
+   * Go to **Manage Jenkins > Manage Nodes > New Node**.
+   * Set:
+
+     * **Name**, **Remote root directory** (e.g., `/home/jenkins`).
+     * **Launch method**: *Launch agents via SSH*.
+     * Provide **host**, **SSH credentials** (username/password or key).
+   * Save and launch.
+
+#### 🔹 B. JNLP Agent Setup
+
+1. Download `agent.jar` from Jenkins controller.
+2. On agent machine, run:
+
+   ```bash
+   java -jar agent.jar -jnlpUrl http://<jenkins_url>/computer/<agent_name>/jenkins-agent.jnlp -secret <secret> -workDir "/home/jenkins"
+   ```
+3. Agent connects back using the JNLP protocol.
+
+> ✅ Use JNLP when SSH access is restricted or for Windows agents.
+
+---
+
+### 🏷️ 4. Label Agents
+
+* You can assign **labels** to agents, such as:
+
+  ```
+  docker linux build-node
+  ```
+* Helps in targeting specific agents in pipelines:
+
+  ```groovy
+  agent { label 'docker' }
+  ```
+
+---
+
+### 🧪 5. Running Jobs on Specific Agents
+
+#### In Freestyle Jobs:
+
+* In job configuration → **Restrict where this project can be run** → Provide label.
+
+#### In Pipelines:
+
+```groovy
+pipeline {
+  agent { label 'linux' }
+
+  stages {
+    stage('Build') {
+      steps {
+        echo "Running on Linux Agent"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 🐳 6. Docker-Based Agents
+
+Jenkins can run builds in **Docker containers** using:
+
+#### a. Docker Plugin:
+
+* Allows running jobs in a container (defined per job).
+
+```groovy
+pipeline {
+  agent {
+    docker { image 'maven:3.6.3-jdk-11' }
+  }
+
+  stages {
+    stage('Build') {
+      steps {
+        sh 'mvn clean package'
+      }
+    }
+  }
+}
+```
+
+#### b. Docker on Agent Nodes:
+
+* Agent nodes can use Docker engine to run job containers.
+* Jenkinsfile example:
+
+  ```groovy
+  agent { label 'docker-enabled' }
+  ```
+
+---
+
+### ☁️ 7. Cloud Agents (AWS EC2, Kubernetes, etc.)
+
+#### a. AWS EC2 Plugin
+
+* Auto-provisions EC2 agents when jobs are triggered.
+* Supports spot instances to reduce cost.
+
+#### b. Kubernetes Plugin
+
+* Dynamically provisions **pods** as Jenkins agents.
+* Best for CI/CD on container-native platforms.
+
+Example:
+
+```groovy
+pipeline {
+  agent {
+    kubernetes {
+      label 'k8s-agent'
+      yaml """
+      apiVersion: v1
+      kind: Pod
+      spec:
+        containers:
+        - name: maven
+          image: maven:3.6.3-jdk-11
+          command:
+          - cat
+          tty: true
+      """
+    }
+  }
+  stages {
+    stage('Test') {
+      steps {
+        sh 'mvn test'
+      }
+    }
+  }
+}
+```
+
+---
+
+## 📌 Summary
+
+| Feature              | SSH                | JNLP               | Docker                | Cloud (EC2/K8s)        |
+| -------------------- | ------------------ | ------------------ | --------------------- | ---------------------- |
+| Connection Direction | Controller → Agent | Agent → Controller | N/A – Local Container | Controller → Cloud API |
+| Requires Java        | ✅                  | ✅                  | ❌ (in image)          | Depends                |
+| Dynamic Provisioning | ❌                  | ❌                  | ✅                     | ✅                      |
+| Platform Agnostic    | ✅                  | ✅                  | ✅                     | ✅                      |
+
+---
+
+## 👨‍💻 Interview Questions + Answers
+
+### Q1: What is the purpose of agent nodes in Jenkins?
+
+**Answer**: Agent nodes offload build jobs from the controller, enabling distributed builds, workload isolation, and scalability across platforms or configurations.
+
+---
+
+### Q2: Difference between SSH and JNLP agents?
+
+**Answer**:
+
+* **SSH**: Controller initiates connection using SSH credentials.
+* **JNLP**: Agent initiates connection to the controller, useful behind firewalls.
+
+---
+
+### Q3: How do you configure Jenkins to use Docker-based agents?
+
+**Answer**: Use the `docker` block in the pipeline definition, specifying the container image. Ensure the agent has Docker installed and permissions configured.
+
+---
+
+### Q4: What are the benefits of using cloud-based agents in Jenkins?
+
+**Answer**:
+
+* On-demand provisioning.
+* Cost-efficient (e.g., spot EC2).
+* Scalable for large workloads.
+* Ideal for containerized pipelines (e.g., Kubernetes).
+
+---
+
+### Q5: What are labels in Jenkins?
+
+**Answer**: Labels are tags assigned to agents. Jobs use labels to target specific agents with required environments or capabilities.
+
+---
+
+## 🧠 Scenario-Based Q\&A
+
+### 🔹 Scenario 1:
+
+**You have a Windows-specific job. How do you ensure it runs on a Windows machine?**
+
+**Solution**:
+
+* Assign label `windows` to the Windows agent.
+* In job configuration or pipeline, set:
+
+  ```groovy
+  agent { label 'windows' }
+  ```
+
+---
+
+### 🔹 Scenario 2:
+
+**Your controller is overloaded. How do you offload builds without changing job configs?**
+
+**Solution**:
+
+* Add new agents and assign labels.
+* Use label matching across jobs or configure agent usage in global Jenkins settings.
+* Freestyle jobs can be moved by setting node restriction.
+
+---
+
+### 🔹 Scenario 3:
+
+**You want each job to run in an isolated, disposable environment.**
+
+**Solution**:
+
+* Use **Docker-based agents** or **Kubernetes plugin**.
+* These spin up clean containers/pods per job.
+
+---
+
+Would you like a **step-by-step SSH agent setup guide with screenshots** or a **Kubernetes agent configuration example** as a follow-up?
